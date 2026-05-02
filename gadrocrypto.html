@@ -162,16 +162,17 @@
   <div class="loading" id="loading">Loading market data…</div>
 </div>
 
-<div class="watermark"><span>GADROCRYPTO ⚡</span></div>
+<div class="watermark"><span>GADROCRYPTO</span></div>
 <div class="watermark-corner">© GADROCRYPTO</div>
 
 <script>
- // Fetch the top 250 by market cap, then filter down to the curated list below.
-  const API = 'https://api.coingecko.com/api/v3/coins/markets'
+  // Fetch the top 250 by market cap via our own Nginx caching proxy
+  // (avoids CoinGecko rate limits — server fetches once per minute and serves the cached copy).
+  const API = '/api/coingecko/coins/markets'
     + '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1'
     + '&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C30d';
 
- // Whitelist: only show these tickers.
+  // Whitelist: only show these tickers.
   const ALLOWED = new Set([
     'BTC','ETH','USDT','XRP','BNB','SOL','DOGE','HYPE','ADA','BCH',
     'TRX','LINK','AVAX','PI','OG','TWT','APE','USDC','LTC','SHIB',
@@ -179,6 +180,7 @@
   ]);
 
   let coins = [];
+  let periodKey = 'price_change_percentage_24h_in_currency';
 
   const fmtUSD = v => {
     if (v == null) return '$—';
@@ -233,7 +235,7 @@
     const W = root.clientWidth;
     const H = root.clientHeight;
 
-    // Use d3 treemap with squarify
+    // Use d3 treemap with squarify; filter to whitelist only.
     const data = {
       name: 'root',
       children: coins
