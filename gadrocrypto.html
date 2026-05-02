@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GADROCRYPTO — Live Crypto Market</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  :root {
+    --bg: #0b0e11;
+    --panel: #14181d;
+    --border: #1f2530;
+    --text: #ffffff;
+    --muted: #b8c0c8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+  }
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: #000;
+    border-bottom: 1px solid var(--border);
+    height: 50px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    font-size: 16px;
+  }
+  .brand .dot {
+    width: 10px; height: 10px; border-radius: 2px;
+    background: #3cc861;
+    box-shadow: 0 0 8px #3cc861;
+  }
+  .top-actions {
+    display: flex; align-items: center; gap: 14px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .pulse {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #3cc861;
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(60, 200, 97, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(60, 200, 97, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(60, 200, 97, 0); }
+  }
+  select.period {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  /* Treemap container */
+  #treemap {
+    position: relative;
+    width: 100vw;
+    height: calc(100vh - 50px);
+  }
+  .tile {
+    position: absolute;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: #fff;
+    cursor: pointer;
+    border: 1px solid rgba(0,0,0,0.35);
+    transition: filter 0.15s ease, transform 0.15s ease;
+    padding: 4px;
+  }
+  .tile:hover { filter: brightness(1.15); z-index: 5; }
+  .tile .sym {
+    font-weight: 800;
+    letter-spacing: -1px;
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    word-break: break-all;
+  }
+  .tile .px { margin-top: 4px; opacity: 0.95; }
+  .tile .ch { margin-top: 2px; opacity: 0.9; }
+  /* Watermark */
+  .watermark {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+  .watermark span {
+    font-size: clamp(40px, 9vw, 130px);
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: rgba(255,255,255,0.07);
+    transform: rotate(-22deg);
+    text-shadow: 0 2px 30px rgba(0,0,0,0.4);
+    user-select: none;
+  }
+  .watermark-corner {
+    position: fixed;
+    bottom: 10px;
+    right: 14px;
+    color: rgba(255,255,255,0.55);
+    font-weight: 700;
+    letter-spacing: 2px;
+    font-size: 12px;
+    z-index: 60;
+  }
+  .status.err { color: #e0556a; }
+  .loading {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    GADROCRYPTO
+  </div>
+  <div class="top-actions">
+    <label style="display:flex;align-items:center;gap:6px;">
+      Period:
+      <select id="period" class="period">
+        <option value="price_change_percentage_1h_in_currency">1h</option>
+        <option value="price_change_percentage_24h_in_currency" selected>24h</option>
+        <option value="price_change_percentage_7d_in_currency">7d</option>
+        <option value="price_change_percentage_30d_in_currency">30d</option>
+      </select>
+    </label>
+    <span class="pulse"></span>
+    <span id="status" class="status">connecting…</span>
+    <span id="last-update">—</span>
+  </div>
+</div>
+
+<div id="treemap">
+  <div class="loading" id="loading">Loading market data…</div>
+</div>
+
+<div class="watermark"><span>GADROCRYPTO</span></div>
+<div class="watermark-corner">© GADROCRYPTO</div>
+
+<script>
+  const API = 'https://api.coingecko.com/api/v3/coins/markets'
+    + '?vs_currency=usd&order=market_cap_desc&per_page=60&page=1'
+    + '&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C30d';
+
+  let coins = [];
+  let periodKey = 'price_change_percentage_24h_in_currency';
+
+  const fmtUSD = v => {
+    if (v == null) return '$—';
+    if (v >= 1)   return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    if (v >= 0.01) return '$' + v.toFixed(4);
+    return '$' + v.toFixed(8).replace(/0+$/, '');
+  };
+  const fmtPct = v => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%');
+
+  // Color scale: red for negative change, green for positive, gray for ~0
+  function colorFor(pct) {
+    if (pct == null) return '#3a3f47';
+    const clamped = Math.max(-10, Math.min(10, pct));
+    const t = Math.abs(clamped) / 10;        // 0..1
+    if (clamped >= 0) {
+      // green: 27,138,58 (strong) -> 60,200,97 (bright)
+      const r = Math.round(40 + (60 - 40) * t);
+      const g = Math.round(120 + (200 - 120) * t);
+      const b = Math.round(60 + (97 - 60) * t);
+      return `rgb(${r},${g},${b})`;
+    } else {
+      const r = Math.round(140 + (224 - 140) * t);
+      const g = Math.round(50 + (85 - 50) * t);
+      const b = Math.round(70 + (106 - 70) * t);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+
+  async function fetchData() {
+    const statusEl = document.getElementById('status');
+    try {
+      const res = await fetch(API, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      coins = await res.json();
+      statusEl.textContent = 'live';
+      statusEl.classList.remove('err');
+      document.getElementById('last-update').textContent =
+        new Date().toLocaleTimeString();
+      render();
+    } catch (e) {
+      statusEl.textContent = 'offline — retrying';
+      statusEl.classList.add('err');
+    }
+  }
+
+  function render() {
+    const root = document.getElementById('treemap');
+    const loading = document.getElementById('loading');
+    if (loading) loading.remove();
+    root.innerHTML = '';
+
+    const W = root.clientWidth;
+    const H = root.clientHeight;
+
+    // Use d3 treemap with squarify
+    const data = {
+      name: 'root',
+      children: coins
+        .filter(c => c.market_cap && c.market_cap > 0)
+        .map(c => ({
+          id: c.id,
+          symbol: c.symbol.toUpperCase(),
+          price: c.current_price,
+          change: c[periodKey],
+          value: c.market_cap,
+        })),
+    };
+
+    const hierarchy = d3.hierarchy(data)
+      .sum(d => d.value)
+      .sort((a, b) => b.value - a.value);
+
+    d3.treemap()
+      .size([W, H])
+      .paddingInner(2)
+      .round(true)(hierarchy);
+
+    hierarchy.leaves().forEach(node => {
+      const d = node.data;
+      const w = node.x1 - node.x0;
+      const h = node.y1 - node.y0;
+      if (w < 4 || h < 4) return;
+
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.style.left = node.x0 + 'px';
+      tile.style.top  = node.y0 + 'px';
+      tile.style.width  = w + 'px';
+      tile.style.height = h + 'px';
+      tile.style.background = colorFor(d.change);
+
+      // Adaptive font sizes based on tile size
+      const minSide = Math.min(w, h);
+      const symSize = Math.max(10, Math.min(minSide * 0.32, w * 0.22, 140));
+      const pxSize  = Math.max(9, Math.min(minSide * 0.14, 22));
+      const chSize  = Math.max(9, Math.min(minSide * 0.12, 18));
+
+      let html = `<div class="sym" style="font-size:${symSize}px">${d.symbol}</div>`;
+      // Only show price/change if there is room
+      if (h > 50 && w > 60) {
+        html += `<div class="px" style="font-size:${pxSize}px">${fmtUSD(d.price)}</div>`;
+      }
+      if (h > 80 && w > 70) {
+        html += `<div class="ch" style="font-size:${chSize}px">${fmtPct(d.change)}</div>`;
+      }
+      tile.innerHTML = html;
+      tile.title = `${d.symbol}\n${fmtUSD(d.price)}\n${fmtPct(d.change)}`;
+      root.appendChild(tile);
+    });
+  }
+
+  document.getElementById('period').addEventListener('change', e => {
+    periodKey = e.target.value;
+    render();
+  });
+
+  window.addEventListener('resize', () => { if (coins.length) render(); });
+
+  fetchData();
+  setInterval(fetchData, 60 * 1000); // refresh every minute (CoinGecko free-tier safe)
+</script>
+</body>
+</html>
