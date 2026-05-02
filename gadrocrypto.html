@@ -166,12 +166,21 @@
 <div class="watermark-corner">© GADROCRYPTO</div>
 
 <script>
+ // Fetch the top 250 by market cap, then filter down to the curated list below.
   const API = 'https://api.coingecko.com/api/v3/coins/markets'
-    + '?vs_currency=usd&order=market_cap_desc&per_page=60&page=1'
+    + '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1'
     + '&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C30d';
 
+  // Whitelist: only show these tickers (matches the coin360 reference layout).
+  const ALLOWED = new Set([
+    'BTC','ETH','BNB','XRP','TRX','ADA','SOL','XLM','SUI','DOT',
+    'LTC','AVAX','ETC','NEAR','QNT','ICP','STETH','LEO','WBETH','HYPE',
+    'XMR','USDS','MAGA','WEETH','HBAR','TAO','BGB','USDE','TON','CRO',
+    'USD1','OKB','SKY','MNT','M','PI','XAUT','JLP','GT','PEPE',
+    'DOGE','LINK','UNI','SHIB','AAVE','ZEC'
+  ]);
+
   let coins = [];
-  let periodKey = 'price_change_percentage_24h_in_currency';
 
   const fmtUSD = v => {
     if (v == null) return '$—';
@@ -230,7 +239,7 @@
     const data = {
       name: 'root',
       children: coins
-        .filter(c => c.market_cap && c.market_cap > 0)
+        .filter(c => c.market_cap && c.market_cap > 0 && ALLOWED.has(c.symbol.toUpperCase()))
         .map(c => ({
           id: c.id,
           symbol: c.symbol.toUpperCase(),
