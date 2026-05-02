@@ -171,13 +171,11 @@
     + '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1'
     + '&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C30d';
 
-  // Whitelist: only show these tickers (matches the coin360 reference layout).
+ // Whitelist: only show these tickers.
   const ALLOWED = new Set([
-    'BTC','ETH','BNB','XRP','TRX','ADA','SOL','XLM','SUI','DOT',
-    'LTC','AVAX','ETC','NEAR','QNT','ICP','STETH','LEO','WBETH','HYPE',
-    'XMR','USDS','MAGA','WEETH','HBAR','TAO','BGB','USDE','TON','CRO',
-    'USD1','OKB','SKY','MNT','M','PI','XAUT','JLP','GT','PEPE',
-    'DOGE','LINK','UNI','SHIB','AAVE','ZEC'
+    'BTC','ETH','USDT','XRP','BNB','SOL','DOGE','HYPE','ADA','BCH',
+    'TRX','LINK','AVAX','PI','OG','TWT','APE','USDC','LTC','SHIB',
+    'SUI','ARB'
   ]);
 
   let coins = [];
