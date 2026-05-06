@@ -313,9 +313,13 @@
     ws.addEventListener('close', () => {
       wsConnected = false;
       ws = null;
-      const statusEl = document.getElementById('status');
-      if (statusEl) statusEl.textContent = 'reconnecting in 30s…';
-      setTimeout(connectWS, 30000);
+      // Hold the "live (ws)" status for 30s after a drop before showing the
+      // reconnect indicator and attempting to reconnect.
+      setTimeout(() => {
+        const statusEl = document.getElementById('status');
+        if (statusEl) statusEl.textContent = 'reconnecting…';
+        connectWS();
+      }, 30000);
     });
 
     ws.addEventListener('error', () => { /* close handler will reconnect */ });
