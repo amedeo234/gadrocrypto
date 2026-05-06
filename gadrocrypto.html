@@ -89,15 +89,23 @@
     padding: 4px;
   }
   .tile:hover { filter: brightness(1.15); z-index: 5; }
+  .tile .spark {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
   .tile .sym {
+    position: relative;
     font-weight: 800;
     letter-spacing: -1px;
     line-height: 1;
     text-shadow: 0 1px 2px rgba(0,0,0,0.35);
     word-break: break-all;
   }
-  .tile .px { margin-top: 4px; opacity: 0.95; }
-  .tile .ch { margin-top: 2px; opacity: 0.9; }
+  .tile .px { position: relative; margin-top: 4px; opacity: 0.95; text-shadow: 0 1px 2px rgba(0,0,0,0.35); }
+  .tile .ch { position: relative; margin-top: 2px; opacity: 0.9; text-shadow: 0 1px 2px rgba(0,0,0,0.35); }
   /* Watermark */
   .watermark {
     position: fixed;
@@ -167,9 +175,10 @@
 <script>
   // Fetch the top 250 by market cap via our own Nginx caching proxy
   // (avoids CoinGecko rate limits — server fetches once per minute and serves the cached copy).
+  // sparkline=true gives us 7d hourly prices for the mini trend chart inside each tile.
   const API = '/api/coingecko/coins/markets'
     + '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1'
-    + '&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C30d';
+    + '&sparkline=true&price_change_percentage=1h%2C24h%2C7d%2C30d';
 
   // Whitelist: only show these tickers.
   const ALLOWED = new Set([
@@ -186,6 +195,31 @@
     return '$' + v.toFixed(8).replace(/0+$/, '');
   };
   const fmtPct = v => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%');
+
+  // Build an SVG sparkline that stretches to fill its container.
+  function sparklineSvg(prices) {
+    if (!prices || prices.length < 2) return '';
+    let min = Infinity, max = -Infinity;
+    for (const p of prices) {
+      if (p < min) min = p;
+      if (p > max) max = p;
+    }
+    const range = max - min || 1;
+    const W = 100, H = 100;
+    const yTop = 28, yBottom = 92;     // line operates between these
+    const step = W / (prices.length - 1);
+    let line = '';
+    for (let i = 0; i < prices.length; i++) {
+      const x = (i * step).toFixed(1);
+      const y = (yBottom - ((prices[i] - min) / range) * (yBottom - yTop)).toFixed(1);
+      line += (i === 0 ? 'M' : ' L') + x + ',' + y;
+    }
+    const area = line + ` L${W},${H} L0,${H} Z`;
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+         + `<path d="${area}" fill="rgba(255,255,255,0.12)"/>`
+         + `<path d="${line}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`
+         + `</svg>`;
+  }
 
   // Color scale: red for negative change, green for positive, gray for ~0
   function colorFor(pct) {
@@ -243,6 +277,7 @@
           price: c.current_price,
           change: c[periodKey],
           value: c.market_cap,
+          spark: c.sparkline_in_7d ? c.sparkline_in_7d.price : null,
         })),
     };
 
@@ -275,7 +310,9 @@
       const pxSize  = Math.max(9, Math.min(minSide * 0.14, 22));
       const chSize  = Math.max(9, Math.min(minSide * 0.12, 18));
 
-      let html = `<div class="sym" style="font-size:${symSize}px">${d.symbol}</div>`;
+      // Sparkline goes first so the text overlays it
+      let html = (h > 40 && w > 50) ? sparklineSvg(d.spark) : '';
+      html += `<div class="sym" style="font-size:${symSize}px">${d.symbol}</div>`;
       // Only show price/change if there is room
       if (h > 50 && w > 60) {
         html += `<div class="px" style="font-size:${pxSize}px">${fmtUSD(d.price)}</div>`;
