@@ -314,8 +314,8 @@
       wsConnected = false;
       ws = null;
       const statusEl = document.getElementById('status');
-      if (statusEl) statusEl.textContent = 'reconnecting…';
-      setTimeout(connectWS, 3000);
+      if (statusEl) statusEl.textContent = 'reconnecting in 30s…';
+      setTimeout(connectWS, 30000);
     });
 
     ws.addEventListener('error', () => { /* close handler will reconnect */ });
