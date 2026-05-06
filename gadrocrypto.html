@@ -163,7 +163,6 @@
 </div>
 
 <div class="watermark"><span>GADROCRYPTO</span></div>
-<div class="watermark-corner">© GADROCRYPTO</div>
 
 <script>
   // Fetch the top 250 by market cap via our own Nginx caching proxy
@@ -174,9 +173,7 @@
 
   // Whitelist: only show these tickers.
   const ALLOWED = new Set([
-    'BTC','ETH','USDT','XRP','BNB','SOL','DOGE','HYPE','ADA','BCH',
-    'TRX','LINK','AVAX','PI','OG','TWT','APE','USDC','LTC','SHIB',
-    'SUI','ARB'
+    'BTC','ETH','XRP','BNB','USDT','USDC','SOL'
   ]);
 
   let coins = [];
