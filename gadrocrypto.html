@@ -85,10 +85,15 @@
     color: #fff;
     cursor: pointer;
     border: 1px solid rgba(0,0,0,0.35);
-    transition: filter 0.15s ease, transform 0.15s ease;
+    transition: filter 0.15s ease, transform 0.15s ease, background-color 0.4s ease;
     padding: 4px;
   }
   .tile:hover { filter: brightness(1.15); z-index: 5; }
+  /* Flash on each WebSocket price tick */
+  @keyframes flash-up   { 0% { filter: brightness(1.35); } 100% { filter: brightness(1); } }
+  @keyframes flash-down { 0% { filter: brightness(0.7);  } 100% { filter: brightness(1); } }
+  .tile.flash-up   { animation: flash-up   0.4s ease-out; }
+  .tile.flash-down { animation: flash-down 0.4s ease-out; }
   .tile .spark {
     position: absolute;
     inset: 0;
@@ -188,6 +193,12 @@
   let coins = [];
   let periodKey = 'price_change_percentage_24h_in_currency';
 
+  // Live-state tracking for the WebSocket ticker
+  const tileBySymbol = {};   // symbol (e.g. "BTC") -> tile DOM node
+  const lastPrice    = {};   // symbol -> previous price (for tick direction)
+  let wsConnected    = false;
+  let ws             = null;
+
   const fmtUSD = v => {
     if (v == null) return '$—';
     if (v >= 1)   return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -246,15 +257,97 @@
       const res = await fetch(API, { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       coins = await res.json();
-      statusEl.textContent = 'live';
+      statusEl.textContent = wsConnected ? 'live (ws)' : 'live';
       statusEl.classList.remove('err');
       document.getElementById('last-update').textContent =
         new Date().toLocaleTimeString();
       render();
+      // Open the live ticker once we have an initial render to attach to
+      if (!wsConnected && !ws) connectWS();
     } catch (e) {
       statusEl.textContent = 'offline — retrying';
       statusEl.classList.add('err');
     }
+  }
+
+  // ------- Binance live ticker over WebSocket -------
+  // Subscribes to <symbol>USDT@ticker streams. Skips USDT (it's the quote currency).
+  function connectWS() {
+    const symbols = [...ALLOWED].filter(s => s !== 'USDT');
+    if (!symbols.length) return;
+    const streams = symbols.map(s => s.toLowerCase() + 'usdt@ticker').join('/');
+    const url = 'wss://stream.binance.com:9443/stream?streams=' + streams;
+
+    try { ws = new WebSocket(url); } catch (e) { return; }
+
+    ws.addEventListener('open', () => {
+      wsConnected = true;
+      const statusEl = document.getElementById('status');
+      if (statusEl) {
+        statusEl.textContent = 'live (ws)';
+        statusEl.classList.remove('err');
+      }
+    });
+
+    ws.addEventListener('message', (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      const d = msg && msg.data;
+      if (!d || d.e !== '24hrTicker' || !d.s) return;
+
+      const sym = d.s.replace(/USDT$/, '');
+      const price  = parseFloat(d.c);
+      const change = parseFloat(d.P);
+      if (!isFinite(price)) return;
+
+      // Mutate the underlying coins record so resize/period-change re-renders use fresh data.
+      const coin = coins.find(c => c.symbol && c.symbol.toUpperCase() === sym);
+      if (coin) {
+        coin.current_price = price;
+        coin.price_change_percentage_24h_in_currency = change;
+      }
+
+      updateTileLive(sym, price, change);
+    });
+
+    ws.addEventListener('close', () => {
+      wsConnected = false;
+      ws = null;
+      const statusEl = document.getElementById('status');
+      if (statusEl) statusEl.textContent = 'reconnecting…';
+      setTimeout(connectWS, 3000);
+    });
+
+    ws.addEventListener('error', () => { /* close handler will reconnect */ });
+  }
+
+  // Patches a single tile in place — no full re-render, no layout shift.
+  function updateTileLive(sym, price, change) {
+    const tile = tileBySymbol[sym];
+    if (!tile) return;
+
+    const pxEl = tile.querySelector('.px');
+    const chEl = tile.querySelector('.ch');
+    const prev = lastPrice[sym];
+
+    if (pxEl) pxEl.textContent = fmtUSD(price);
+
+    // Only repaint % and color when the user is looking at 24h
+    // (Binance ticker is a 24h rolling window; other periods come from CoinGecko).
+    if (periodKey === 'price_change_percentage_24h_in_currency') {
+      if (chEl) chEl.textContent = fmtPct(change);
+      tile.style.background = colorFor(change);
+    }
+    tile.title = `${sym}\n${fmtUSD(price)}\n${fmtPct(change)}`;
+
+    // Brief brightness flash on price tick — green if up, dim if down
+    if (prev != null && price !== prev) {
+      const cls = price > prev ? 'flash-up' : 'flash-down';
+      tile.classList.remove('flash-up', 'flash-down');
+      void tile.offsetWidth; // force animation restart
+      tile.classList.add(cls);
+    }
+    lastPrice[sym] = price;
   }
 
   function render() {
@@ -262,6 +355,8 @@
     const loading = document.getElementById('loading');
     if (loading) loading.remove();
     root.innerHTML = '';
+    // Clear the previous tile->symbol map; we're about to repopulate it.
+    Object.keys(tileBySymbol).forEach(k => delete tileBySymbol[k]);
 
     const W = root.clientWidth;
     const H = root.clientHeight;
@@ -323,6 +418,7 @@
       tile.innerHTML = html;
       tile.title = `${d.symbol}\n${fmtUSD(d.price)}\n${fmtPct(d.change)}`;
       root.appendChild(tile);
+      tileBySymbol[d.symbol] = tile;
     });
   }
 
